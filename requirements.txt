@@ -1,0 +1,6 @@
+streamlit
+supabase
+sentence-transformers
+torch
+groq
+# nltk # Add if you uncomment and use NLTK features
