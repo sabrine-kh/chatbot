@@ -13,6 +13,9 @@ from groq import Groq
 # from nltk.corpus import stopwords
 # from nltk.tokenize import word_tokenize
 
+# --- Streamlit UI ---
+st.set_page_config(page_title="Leoni_chat", layout="wide")
+
 # --- Configuration ---
 # For Streamlit, use st.secrets
 # Ensure you have .streamlit/secrets.toml with your credentials
@@ -363,7 +366,6 @@ Answer the user question based *only* on the provided context."""
     return llm_response, debug_info_str
 
 # --- Streamlit UI ---
-st.set_page_config(page_title="Leoni_chat", layout="wide")
 st.title("Leoni_chat") # Header as requested
 
 # Initialize chat history
