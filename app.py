@@ -103,38 +103,37 @@ def find_relevant_markdown_chunks(query_embedding, supabase_client):
         return response.data if response.data else []
     except Exception as e: print(f"    Error calling RPC '{RPC_FUNCTION_NAME}': {e}"); return []
 
-def generate_sql_from_query(user_query, table_schema, groq_cli, debug_prints):
-    debug_prints.append("    Attempting Text-to-SQL generation...")
-    leoni_attributes_schema = """
-(id: bigint, Number: text, Name: text, "Object Type Indicator": text, Context: text, Version: text, State: text, "Last Modified": timestamp with time zone, "Created On": timestamp with time zone, "Sourcing Status": text, "Material Filling": text, "Material Name": text, "Max. Working Temperature [°C]": numeric, "Min. Working Temperature [°C]": numeric, Colour: text, "Contact Systems": text, Gender: text, "Housing Seal": text, "HV Qualified": text, "Length [mm]": numeric, "Mechanical Coding": text, "Number Of Cavities": numeric, "Number Of Rows": numeric, "Pre-assembled": text, Sealing: text, "Sealing Class": text, "Terminal Position Assurance": text, "Type Of Connector": text, "Width [mm]": numeric, "Wire Seal": text, "Connector Position Assurance": text, "Colour Coding": text, "Set/Kit": text, "Name Of Closed Cavities": text, "Pull-To-Seat": text, "Height [mm]": numeric, Classification: text)
-"""
-    prompt = f"""Your task is to convert natural language questions into PostgreSQL SELECT queries for the "Leoni_attributes" table.
+def generate_sql_from_query(user_query, table_schema):
+    """Uses Groq LLM with refined prompt and examples to generate SQL."""
+    print("    Attempting Text-to-SQL generation...")
+    # --- Refined Prompt ---
+    prompt = f"""Your task is to convert natural language questions into PostgreSQL SELECT queries for the "Leoni_attributes" table. Interpret the user's intent broadly and search across all relevant attributes for the target keyword and its variations.
+
 Strictly adhere to the following rules:
-1.  **Output Only SQL or NO_SQL:** Your entire response must be either a single, valid PostgreSQL SELECT statement ending with a semicolon (;) OR the exact word NO_SQL if the question cannot be answered by querying the table. Do not add explanations or markdown formatting.
-2.  **Target Table:** ONLY query the "Leoni_attributes" table.
-3.  **Column Quoting:** ONLY use double quotes around column names if they contain spaces, capital letters (besides the first letter if that's the only capital), or special characters like [, ], °, %. Standard names like "Number", "Name", "Context", "Version", "Colour", "Gender" usually DO NOT need quotes. When in doubt, check the schema provided. Example requiring quotes: "Object Type Indicator", "Max. Working Temperature [°C]".
-4.  **SELECT Clause:**
-    *   Select the columns explicitly asked for by the user.
-    *   If the user's question implies a condition (e.g., "parts that are RED" or "parts with more than 10 cavities"), **you MUST include the column(s) involved in that condition in your SELECT statement**, in addition to any other columns the user explicitly requests. This allows verification of the condition. For example, for "parts that are red", include "Colour" in the SELECT. For "parts with more than 10 cavities", include "Number Of Cavities".
-    *   If the user asks a general question about a part (e.g., "tell me about P00001636"), `SELECT *` is appropriate.
-5.  **Filtering:**
-    *   Use `=` for exact matches, especially for full part numbers provided in the "Number" column.
-    *   Use `ILIKE` for case-insensitive text matching (e.g., `WHERE "Name" ILIKE '%housing%'`). Use wildcards `%` appropriately.
-    *   Use `LIKE 'Value%'` or `ILIKE 'Value%'` for "starts with" queries on text fields.
-    *   Use standard operators (`>`, `<`, `=`, `>=`, `<=`) for numeric and date/timestamp comparisons. Format dates as 'YYYY-MM-DD'.
-    *   Combine conditions using `AND` / `OR` as needed.
-6.  **LIMIT Clause:** Always include a `LIMIT` clause. Use `LIMIT 3` for queries targeting a specific, unique identifier like "Number". Use `LIMIT 10` for broader searches (like by name or color) unless the user explicitly asks for "all" matching items or a different quantity.
-7.  **NO_SQL:** If the question asks for general knowledge, definitions found in separate documentation, or something clearly outside the scope of the table schema, respond ONLY with NO_SQL.
+1. **Output Only SQL or NO_SQL**: Your entire response must be either a single, valid PostgreSQL SELECT statement ending with a semicolon (;) OR the exact word NO_SQL if the question cannot be answered by querying the table. Do not add explanations or markdown formatting.
+2. **Target Table**: ONLY query the "Leoni_attributes" table.
+3. **Column Quoting**: ONLY use double quotes around column names if they contain spaces, capital letters (besides the first letter if that's the only capital), or special characters like [, ], °, %. Standard names like "Number", "Name", "Colour" usually DO NOT need quotes. Check the schema: {table_schema}
+4. **SELECT Clause**:
+   - Select columns explicitly asked for by the user.
+   - If the user's question implies a condition (e.g., "parts that are black" or "parts with more than 10 cavities"), **include the column(s) involved in that condition** in the SELECT statement to allow verification. For example, for "parts that are black", include "Colour", "Name", or other relevant attributes.
+   - If the user asks about a specific part (e.g., "tell me about P00001636"), use `SELECT *`.
+5. **Flexible Intent Detection**:
+   - Identify the main keyword or intent (e.g., "black", "connector") in the user's question.
+   - Search across all relevant text-based attributes (e.g., "Colour", "Name", "Material Name", "Context") for the keyword and its variations (e.g., for "black", include "blk", "bk", "BLK", "kb").
+   - Use `ILIKE` with `%` wildcards for case-insensitive matching and combine conditions with `OR` for each variation and attribute.
+   - For numeric or date fields, use appropriate operators (>, <, =, >=, <=) and format dates as 'YYYY-MM-DD'.
+6. **LIMIT Clause**: Use `LIMIT 3` for queries targeting a unique identifier like "Number". Use `LIMIT 10` for broader searches (e.g., by name, color) unless the user asks for "all" or a specific quantity.
+7. **NO_SQL**: Return NO_SQL if the question asks for general knowledge, definitions outside the schema, or something unrelated to the table.
 
 Table Schema: "Leoni_attributes"
-{leoni_attributes_schema}
+{table_schema}
 
 Examples:
 User Question: "What is part number P00001636?"
 SQL Query: SELECT * FROM "Leoni_attributes" WHERE "Number" = 'P00001636' LIMIT 3;
 
 User Question: "Show me supplier parts containing 'connector'"
-SQL Query: SELECT "Number", "Name", "Object Type Indicator" FROM "Leoni_attributes" WHERE "Object Type Indicator" = 'Supplier Part' AND "Name" ILIKE '%connector%' LIMIT 10;
+SQL Query: SELECT "Number", "Name", "Object Type Indicator" FROM "Leoni_attributes" WHERE "Object Type Indicator" = 'Supplier Part' AND ("Name" ILIKE '%connector%' OR "Material Name" ILIKE '%connector%') LIMIT 10;
 
 User Question: "Find part numbers starting with C"
 SQL Query: SELECT "Number", "Name" FROM "Leoni_attributes" WHERE "Number" ILIKE 'C%' LIMIT 10;
@@ -143,10 +142,10 @@ User Question: "What is the colour and version for 0-1718091-1?"
 SQL Query: SELECT "Number", "Colour", "Version" FROM "Leoni_attributes" WHERE "Number" = '0-1718091-1' LIMIT 3;
 
 User Question: "List part numbers that are black"
-SQL Query: SELECT "Number", "Colour" FROM "Leoni_attributes" WHERE "Colour" ILIKE '%black%' LIMIT 10;
+SQL Query: SELECT "Number", "Colour", "Name", "Material Name" FROM "Leoni_attributes" WHERE "Colour" ILIKE '%black%' OR "Colour" ILIKE '%blk%' OR "Colour" ILIKE '%bk%' OR "Colour" ILIKE '%BLK%' OR "Colour" ILIKE '%kb%' OR "Name" ILIKE '%black%' OR "Name" ILIKE '%blk%' OR "Name" ILIKE '%bk%' OR "Name" ILIKE '%BLK%' OR "Name" ILIKE '%kb%' OR "Material Name" ILIKE '%black%' OR "Material Name" ILIKE '%blk%' OR "Material Name" ILIKE '%bk%' OR "Material Name" ILIKE '%BLK%' OR "Material Name" ILIKE '%kb%' LIMIT 10;
 
-User Question: "List all distinct object type indicators"
-SQL Query: SELECT DISTINCT "Object Type Indicator" FROM "Leoni_attributes";
+User Question: "Parts with more than 10 cavities"
+SQL Query: SELECT "Number", "Number Of Cavities" FROM "Leoni_attributes" WHERE "Number Of Cavities" > 10 LIMIT 10;
 
 User Question: "What is a TPA?"
 SQL Query: NO_SQL
@@ -154,9 +153,8 @@ SQL Query: NO_SQL
 User Question: "{user_query}"
 SQL Query:
 """
-    if not groq_cli: return None
     try:
-        response = groq_cli.chat.completions.create(
+        response = groq_client.chat.completions.create(
             messages=[
                 {"role": "system", "content": "You are an expert Text-to-SQL assistant generating PostgreSQL queries."},
                 {"role": "user", "content": prompt}
@@ -166,23 +164,23 @@ SQL Query:
         generated_sql = response.choices[0].message.content.strip()
 
         if generated_sql == "NO_SQL":
-            debug_prints.append("    LLM determined no SQL query is applicable.")
+            print("    LLM determined no SQL query is applicable.")
             return None
         if generated_sql.upper().startswith("SELECT") and generated_sql.endswith(';'):
             forbidden = ["UPDATE", "DELETE", "INSERT", "DROP", "TRUNCATE", "ALTER", "CREATE", "EXECUTE", "GRANT", "REVOKE"]
             if any(k in generated_sql.upper() for k in forbidden):
-                debug_prints.append(f"    WARNING: Generated SQL forbidden. Discarding: {generated_sql}")
+                print(f"    WARNING: Generated SQL contains forbidden keyword. Discarding: {generated_sql}")
                 return None
             if ATTRIBUTE_TABLE_NAME.lower() not in generated_sql.lower():
-                 debug_prints.append(f"    WARNING: Generated SQL not querying '{ATTRIBUTE_TABLE_NAME}'. Discarding: {generated_sql}")
-                 return None
-            debug_prints.append(f"    Generated SQL: {generated_sql}")
+                print(f"    WARNING: Generated SQL not querying '{ATTRIBUTE_TABLE_NAME}'. Discarding: {generated_sql}")
+                return None
+            print(f"    Generated SQL: {generated_sql}")
             return generated_sql
         else:
-            debug_prints.append(f"    LLM response was not valid SQL or NO_SQL: {generated_sql}")
+            print(f"    LLM response was not valid SQL or NO_SQL: {generated_sql}")
             return None
     except Exception as e:
-        debug_prints.append(f"    Error during Text-to-SQL generation: {e}")
+        print(f"    Error during Text-to-SQL generation: {e}")
         return None
 
 def find_relevant_attributes_with_sql(generated_sql, supabase_client, debug_prints):
