@@ -1,10 +1,11 @@
-import streamlit as st
+
+# Cell 2: Main Script (Generalized Text-to-SQL Focused)
 import os
 import time
 import json
 import unicodedata
 import re
-# from google.colab import userdata # Removed for Streamlit
+from google.colab import userdata
 from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
 from groq import Groq
@@ -13,89 +14,57 @@ from groq import Groq
 # from nltk.corpus import stopwords
 # from nltk.tokenize import word_tokenize
 
-# --- Streamlit UI ---
-st.set_page_config(page_title="Leoni_chat", layout="wide")
-
 # --- Configuration ---
-# For Streamlit, use st.secrets
-# Ensure you have .streamlit/secrets.toml with your credentials
 try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_SERVICE_KEY = st.secrets["SUPABASE_SERVICE_KEY"]
-    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+    SUPABASE_URL = userdata.get('SUPABASE_URL')
+    SUPABASE_SERVICE_KEY = userdata.get('SUPABASE_SERVICE_KEY')
+    GROQ_API_KEY = userdata.get('GROQ_API_KEY')
     if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GROQ_API_KEY]):
-        raise ValueError("One or more secrets not found in st.secrets.")
-    # print("Credentials loaded from Streamlit secrets.") # Goes to console
-except Exception as e:
-    st.error(f"Error loading secrets: {e}. Please ensure .streamlit/secrets.toml is configured.")
-    st.stop()
-
+        raise ValueError("One or more secrets not found.")
+    print("Credentials loaded from Colab secrets.")
+except Exception as e: print(f"Error loading secrets: {e}"); exit()
 
 # --- Model & DB Config ---
 MARKDOWN_TABLE_NAME = "markdown_chunks"
-ATTRIBUTE_TABLE_NAME = "Leoni_attributes"
-RPC_FUNCTION_NAME = "match_markdown_chunks"
+ATTRIBUTE_TABLE_NAME = "Leoni_attributes" # <<< VERIFY
+RPC_FUNCTION_NAME = "match_markdown_chunks" # <<< VERIFY
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIMENSIONS = 384
-GROQ_MODEL_FOR_SQL = "meta-llama/llama-4-maverick-17b-128e-instruct" # "mixtral-8x7b-32768" is also good
-GROQ_MODEL_FOR_ANSWER = "meta-llama/llama-4-maverick-17b-128e-instruct" # "mixtral-8x7b-32768"
+GROQ_MODEL_FOR_SQL = "meta-llama/llama-4-maverick-17b-128e-instruct"
+GROQ_MODEL_FOR_ANSWER = "meta-llama/llama-4-maverick-17b-128e-instruct"
+print(f"Using Groq Model for SQL: {GROQ_MODEL_FOR_SQL}")
+print(f"Using Groq Model for Answer: {GROQ_MODEL_FOR_ANSWER}")
 
 # --- Search Parameters ---
 VECTOR_SIMILARITY_THRESHOLD = 0.60
 VECTOR_MATCH_COUNT = 3
 
-# --- Initialize Clients (Cached for performance) ---
-@st.cache_resource
-def init_supabase_client():
-    try:
-        client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-        print("Supabase client initialized.") # Console log
-        return client
-    except Exception as e:
-        st.error(f"Error initializing Supabase client: {e}")
-        return None
+# --- Initialize Clients ---
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    print("Supabase client initialized.")
+except Exception as e: print(f"Error initializing Supabase client: {e}"); exit()
+try:
+    st_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    print(f"Sentence Transformer model ({EMBEDDING_MODEL_NAME}) loaded.")
+    test_emb = st_model.encode("test")
+    if len(test_emb) != EMBEDDING_DIMENSIONS: raise ValueError("Embedding dimension mismatch")
+except Exception as e: print(f"Error loading Sentence Transformer model: {e}"); exit()
+try:
+    groq_client = Groq(api_key=GROQ_API_KEY)
+    print("Groq client initialized.")
+except Exception as e: print(f"Error initializing Groq client: {e}"); exit()
 
-@st.cache_resource
-def load_sentence_transformer_model():
-    try:
-        model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-        print(f"Sentence Transformer model ({EMBEDDING_MODEL_NAME}) loaded.") # Console log
-        test_emb = model.encode("test")
-        if len(test_emb) != EMBEDDING_DIMENSIONS:
-            raise ValueError(f"Embedding dimension mismatch. Expected {EMBEDDING_DIMENSIONS}, got {len(test_emb)}")
-        return model
-    except Exception as e:
-        st.error(f"Error loading Sentence Transformer model: {e}")
-        return None
-
-@st.cache_resource
-def init_groq_client():
-    try:
-        client = Groq(api_key=GROQ_API_KEY)
-        print("Groq client initialized.") # Console log
-        return client
-    except Exception as e:
-        st.error(f"Error initializing Groq client: {e}")
-        return None
-
-supabase = init_supabase_client()
-st_model = load_sentence_transformer_model()
-groq_client = init_groq_client()
-
-if not all([supabase, st_model, groq_client]):
-    st.error("One or more critical services could not be initialized. The chatbot cannot function.")
-    st.stop()
-
-# --- Helper Functions (Copied from your script, minor changes for logging) ---
+# --- Helper Functions ---
 def get_query_embedding(text):
-    if not text or not st_model: return None
+    if not text: return None
     try: return st_model.encode(text).tolist()
     except Exception as e: print(f"    Error generating query embedding: {e}"); return None
 
-def find_relevant_markdown_chunks(query_embedding, supabase_client):
-    if not query_embedding or not supabase_client: return []
+def find_relevant_markdown_chunks(query_embedding):
+    if not query_embedding: return []
     try:
-        response = supabase_client.rpc(RPC_FUNCTION_NAME, {
+        response = supabase.rpc(RPC_FUNCTION_NAME, {
             'query_embedding': query_embedding,
             'match_threshold': VECTOR_SIMILARITY_THRESHOLD,
             'match_count': VECTOR_MATCH_COUNT
@@ -103,27 +72,35 @@ def find_relevant_markdown_chunks(query_embedding, supabase_client):
         return response.data if response.data else []
     except Exception as e: print(f"    Error calling RPC '{RPC_FUNCTION_NAME}': {e}"); return []
 
+# ----- Refined Text-to-SQL Generation Function -----
+
+# ----- Refined Text-to-SQL Generation Function -----
 def generate_sql_from_query(user_query, table_schema):
-    """Uses Groq LLM with refined prompt and examples to generate SQL."""
+    """Uses Groq LLM with refined prompt and examples to generate SQL, attempting broad keyword matching."""
     print("    Attempting Text-to-SQL generation...")
     # --- Refined Prompt ---
-    prompt = f"""Your task is to convert natural language questions into PostgreSQL SELECT queries for the "Leoni_attributes" table. Interpret the user's intent broadly and search across all relevant attributes for the target keyword and its variations.
+    prompt = f"""Your task is to convert natural language questions into robust PostgreSQL SELECT queries for the "Leoni_attributes" table. The primary goal is to find matching rows even if the user slightly misspells a keyword or uses variations.
 
 Strictly adhere to the following rules:
 1. **Output Only SQL or NO_SQL**: Your entire response must be either a single, valid PostgreSQL SELECT statement ending with a semicolon (;) OR the exact word NO_SQL if the question cannot be answered by querying the table. Do not add explanations or markdown formatting.
 2. **Target Table**: ONLY query the "Leoni_attributes" table.
-3. **Column Quoting**: ONLY use double quotes around column names if they contain spaces, capital letters (besides the first letter if that's the only capital), or special characters like [, ], °, %. Standard names like "Number", "Name", "Colour" usually DO NOT need quotes. Check the schema: {table_schema}
+3. **Column Quoting**: Use double quotes around column names ONLY if necessary (contain spaces, capitals beyond first letter, special chars). Check schema: {table_schema}
 4. **SELECT Clause**:
-   - Select columns explicitly asked for by the user.
-   - If the user's question implies a condition (e.g., "parts that are black" or "parts with more than 10 cavities"), **include the column(s) involved in that condition** in the SELECT statement to allow verification. For example, for "parts that are black", include "Colour", "Name", or other relevant attributes.
-   - If the user asks about a specific part (e.g., "tell me about P00001636"), use `SELECT *`.
-5. **Flexible Intent Detection**:
-   - Identify the main keyword or intent (e.g., "black", "connector") in the user's question.
-   - Search across all relevant text-based attributes (e.g., "Colour", "Name", "Material Name", "Context") for the keyword and its variations (e.g., for "black", include "blk", "bk", "BLK", "kb").
-   - Use `ILIKE` with `%` wildcards for case-insensitive matching and combine conditions with `OR` for each variation and attribute.
-   - For numeric or date fields, use appropriate operators (>, <, =, >=, <=) and format dates as 'YYYY-MM-DD'.
-6. **LIMIT Clause**: Use `LIMIT 3` for queries targeting a unique identifier like "Number". Use `LIMIT 10` for broader searches (e.g., by name, color) unless the user asks for "all" or a specific quantity.
-7. **NO_SQL**: Return NO_SQL if the question asks for general knowledge, definitions outside the schema, or something unrelated to the table.
+   - Select columns explicitly asked for or implied by the user's condition.
+   - Always include the columns involved in the WHERE clause conditions for verification.
+   - Use `SELECT *` for requests about a specific part number.
+5. **Robust Keyword Searching (CRITICAL RULE)**:
+   - Identify the main descriptive keyword(s) in the user's question (e.g., colors, materials, types like 'black', 'connector', 'grey', 'terminal'). Do NOT apply this robust search to specific identifiers like part numbers unless the user query implies a pattern search (e.g., 'starts with...').
+   - For the identified keyword(s), generate a comprehensive list of **potential variations**:
+     - **Common Abbreviations:** (e.g., 'blk', 'bk' for black; 'gry', 'gy' for grey; 'conn' for connector; 'term' for terminal).
+     - **Alternative Spellings/Regional Variations:** (e.g., 'grey'/'gray', 'colour'/'color').
+     - **Different Casings:** (e.g., 'BLK', 'Gry', 'CONN').
+     - ***Likely Typos/Common Misspellings:*** (e.g., for 'black', consider 'blak', 'blck'; for 'terminal', consider 'termnial', 'terminl'; for 'connector', 'conecter'). Use your knowledge of common typing errors, but be reasonable – don't include highly improbable variations.
+   - Search for the original keyword AND **ALL generated variations** across **multiple relevant text-based attributes**. Relevant attributes typically include "Colour", "Name", "Material Name", "Context", "Type Of Connector", "Terminal Position Assurance", etc. – use context to decide which columns are most relevant for the specific keyword.
+   - Use `ILIKE` with surrounding wildcards (`%`) (e.g., `'%variation%'`) for case-insensitive, substring matching for every term and variation.
+   - Combine **ALL** these individual search conditions (original + all variations across all relevant columns) using the `OR` operator. This might result in a long WHERE clause, which is expected.
+6. **LIMIT Clause**: Use `LIMIT 3` for specific part number lookups. Use `LIMIT 10` (or maybe `LIMIT 20` if many variations are generated) for broader keyword searches to provide a reasonable sample.
+7. **NO_SQL**: Return NO_SQL for general knowledge questions, requests outside the table's scope, or highly ambiguous queries.
 
 Table Schema: "Leoni_attributes"
 {table_schema}
@@ -133,16 +110,16 @@ User Question: "What is part number P00001636?"
 SQL Query: SELECT * FROM "Leoni_attributes" WHERE "Number" = 'P00001636' LIMIT 3;
 
 User Question: "Show me supplier parts containing 'connector'"
-SQL Query: SELECT "Number", "Name", "Object Type Indicator" FROM "Leoni_attributes" WHERE "Object Type Indicator" = 'Supplier Part' AND ("Name" ILIKE '%connector%' OR "Material Name" ILIKE '%connector%') LIMIT 10;
+SQL Query: SELECT "Number", "Name", "Object Type Indicator", "Type Of Connector" FROM "Leoni_attributes" WHERE "Object Type Indicator" = 'Supplier Part' AND ("Name" ILIKE '%connector%' OR "Name" ILIKE '%conn%' OR "Name" ILIKE '%conecter%' OR "Type Of Connector" ILIKE '%connector%' OR "Type Of Connector" ILIKE '%conn%' OR "Type Of Connector" ILIKE '%conecter%') LIMIT 10; # Includes variation and likely typo
 
 User Question: "Find part numbers starting with C"
-SQL Query: SELECT "Number", "Name" FROM "Leoni_attributes" WHERE "Number" ILIKE 'C%' LIMIT 10;
-
-User Question: "What is the colour and version for 0-1718091-1?"
-SQL Query: SELECT "Number", "Colour", "Version" FROM "Leoni_attributes" WHERE "Number" = '0-1718091-1' LIMIT 3;
+SQL Query: SELECT "Number", "Name" FROM "Leoni_attributes" WHERE "Number" ILIKE 'C%' LIMIT 10; # Pattern search, not robust keyword search
 
 User Question: "List part numbers that are black"
-SQL Query: SELECT "Number", "Colour", "Name", "Material Name" FROM "Leoni_attributes" WHERE "Colour" ILIKE '%black%' OR "Colour" ILIKE '%blk%' OR "Colour" ILIKE '%bk%' OR "Colour" ILIKE '%BLK%' OR "Colour" ILIKE '%kb%' OR "Name" ILIKE '%black%' OR "Name" ILIKE '%blk%' OR "Name" ILIKE '%bk%' OR "Name" ILIKE '%BLK%' OR "Name" ILIKE '%kb%' OR "Material Name" ILIKE '%black%' OR "Material Name" ILIKE '%blk%' OR "Material Name" ILIKE '%bk%' OR "Material Name" ILIKE '%BLK%' OR "Material Name" ILIKE '%kb%' LIMIT 10;
+SQL Query: SELECT "Number", "Colour", "Name", "Material Name" FROM "Leoni_attributes" WHERE "Colour" ILIKE '%black%' OR "Colour" ILIKE '%blk%' OR "Colour" ILIKE '%bk%' OR "Colour" ILIKE '%BLK%' OR "Colour" ILIKE '%blak%' OR "Colour" ILIKE '%blck%' OR "Name" ILIKE '%black%' OR "Name" ILIKE '%blk%' OR "Name" ILIKE '%bk%' OR "Name" ILIKE '%BLK%' OR "Name" ILIKE '%blak%' OR "Name" ILIKE '%blck%' OR "Material Name" ILIKE '%black%' OR "Material Name" ILIKE '%blk%' OR "Material Name" ILIKE '%bk%' OR "Material Name" ILIKE '%BLK%' OR "Material Name" ILIKE '%blak%' OR "Material Name" ILIKE '%blck%' LIMIT 10; # Example with typos added
+
+User Question: "Any grey parts?"
+SQL Query: SELECT "Number", "Colour", "Name" FROM "Leoni_attributes" WHERE "Colour" ILIKE '%grey%' OR "Colour" ILIKE '%gray%' OR "Colour" ILIKE '%gry%' OR "Colour" ILIKE '%gy%' OR "Colour" ILIKE '%GRY%' OR "Colour" ILIKE '%graey%' OR "Name" ILIKE '%grey%' OR "Name" ILIKE '%gray%' OR "Name" ILIKE '%gry%' OR "Name" ILIKE '%gy%' OR "Name" ILIKE '%GRY%' OR "Name" ILIKE '%graey%' LIMIT 10; # Example with alternative spelling, typo
 
 User Question: "Parts with more than 10 cavities"
 SQL Query: SELECT "Number", "Number Of Cavities" FROM "Leoni_attributes" WHERE "Number Of Cavities" > 10 LIMIT 10;
@@ -156,9 +133,10 @@ SQL Query:
     try:
         response = groq_client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "You are an expert Text-to-SQL assistant generating PostgreSQL queries."},
+                {"role": "system", "content": "You are an expert Text-to-SQL assistant generating PostgreSQL queries optimized for finding matches despite keyword variations and typos."},
                 {"role": "user", "content": prompt}
-            ], model=GROQ_MODEL_FOR_SQL, temperature=0.0, max_tokens=500
+            ], model=GROQ_MODEL_FOR_SQL, temperature=0.1, # Keep temperature low for consistency
+               max_tokens=1000 # Increase max_tokens slightly as queries might get long
         )
         if not response.choices or not response.choices[0].message: return None
         generated_sql = response.choices[0].message.content.strip()
@@ -166,14 +144,21 @@ SQL Query:
         if generated_sql == "NO_SQL":
             print("    LLM determined no SQL query is applicable.")
             return None
+        # Reuse the robust SQL check from previous response
         if generated_sql.upper().startswith("SELECT") and generated_sql.endswith(';'):
             forbidden = ["UPDATE", "DELETE", "INSERT", "DROP", "TRUNCATE", "ALTER", "CREATE", "EXECUTE", "GRANT", "REVOKE"]
-            if any(k in generated_sql.upper() for k in forbidden):
+            upper_sql = generated_sql.upper()
+            if any(k in upper_sql for k in forbidden):
                 print(f"    WARNING: Generated SQL contains forbidden keyword. Discarding: {generated_sql}")
                 return None
-            if ATTRIBUTE_TABLE_NAME.lower() not in generated_sql.lower():
-                print(f"    WARNING: Generated SQL not querying '{ATTRIBUTE_TABLE_NAME}'. Discarding: {generated_sql}")
-                return None
+            # Check if the target table name appears after FROM
+            # Regex needs to handle potential schema qualification like "public"."Leoni_attributes"
+            # Making it simpler: check if table name (quoted or unquoted) is present after FROM
+            table_name_pattern = r'FROM\s+(?:[\w]+\.)?("?' + ATTRIBUTE_TABLE_NAME + r'"?)'
+            from_clause_match = re.search(table_name_pattern, generated_sql, re.IGNORECASE)
+            if not from_clause_match:
+                 print(f"    WARNING: Generated SQL might not be querying '{ATTRIBUTE_TABLE_NAME}' correctly. Discarding: {generated_sql}")
+                 return None
             print(f"    Generated SQL: {generated_sql}")
             return generated_sql
         else:
@@ -183,79 +168,174 @@ SQL Query:
         print(f"    Error during Text-to-SQL generation: {e}")
         return None
 
-def find_relevant_attributes_with_sql(generated_sql, supabase_client, debug_prints):
-    if not generated_sql or not supabase_client: return []
+# The rest of your script (imports, configuration, find_relevant_attributes_with_sql, main loop etc.) remains the same.
+# Make sure to replace the old `generate_sql_from_query` function with this updated version.
+# ----- SQL Execution Function (Client-Side OR/AND Handling) -----
+def find_relevant_attributes_with_sql(generated_sql):
+    """
+    Executes SQL using Supabase client filters.
+    Attempts to handle simple OR conditions using .or_().
+    Falls back to implicit AND for other cases.
+    WARNING: Complex WHERE clauses (mixed AND/OR, parentheses) might be executed incorrectly.
+    """
+    if not generated_sql: return []
     try:
-        debug_prints.append(f"    Attempting to execute generated SQL on '{ATTRIBUTE_TABLE_NAME}' (using placeholder logic)...")
-        debug_prints.append(f"      SQL Generated by LLM: {generated_sql}")
+        print(f"    Attempting to execute generated SQL on '{ATTRIBUTE_TABLE_NAME}' (using client-side filters)...")
+        print(f"      SQL Generated by LLM: {generated_sql}")
 
         select_clause = "*"
         sel_match = re.match(r"SELECT\s+(.*?)\s+FROM", generated_sql, re.I | re.S)
         if sel_match:
             select_clause = sel_match.group(1).strip()
+            # Ensure "Number" is always selected if not selecting * (for identification)
             if select_clause != "*" and '"Number"' not in select_clause and 'Number' not in select_clause :
-                 if "distinct" not in select_clause.lower():
+                 # Avoid adding "Number" if DISTINCT is used and Number wasn't requested
+                 is_distinct = re.match(r"DISTINCT\s+", select_clause, re.I)
+                 if not is_distinct:
                     select_clause += ', "Number"'
+            # Strip potential trailing comma if added unnecessarily (e.g. SELECT DISTINCT "Col1", "Number")
+            select_clause = select_clause.strip().rstrip(',')
 
-        query = supabase_client.table(ATTRIBUTE_TABLE_NAME).select(select_clause)
 
+        query = supabase.table(ATTRIBUTE_TABLE_NAME).select(select_clause)
+
+        # --- WHERE Clause Parsing ---
         where_clause_full = ""
         where_match = re.search(r'WHERE\s+(.*?)(?:ORDER BY|LIMIT|$)', generated_sql, re.I | re.S)
         if where_match:
             where_clause_full = where_match.group(1).strip().rstrip(';')
-            debug_prints.append(f"      Extracted WHERE (approx): {where_clause_full}")
+            print(f"      Extracted WHERE (approx): {where_clause_full}")
 
+        # Pattern to extract simple Column OP 'Value' conditions
+        # Handles quoted/unquoted columns, common operators
         filter_pattern = re.compile(
-            r'("?[\w\s\[\]%.°\-]+"?)\s*(ILIKE|LIKE|=)\s*\'(.*?)\'',
+            # r'("?[\w\s\[\]%.°\-]+"?)\s*(ILIKE|LIKE|=)\s*\'(.*?)\'', # Original - might miss some cases
+            r'("?[\w\s%.°\[\]\-]+"?)\s+(ILIKE|LIKE|=|<=?|>=?)\s*\'?([^ \']+)\'?', # Improved: handles operators like >, <, >=, <= and potentially unquoted numeric values
             re.IGNORECASE
         )
-        conditions_applied_count = 0
-        processed_conditions_for_logging = []
 
-        for individual_condition_match in filter_pattern.finditer(where_clause_full):
-            filter_col_name = individual_condition_match.group(1).replace('"', '')
-            operator = individual_condition_match.group(2).upper()
-            filter_value = individual_condition_match.group(3)
-            processed_conditions_for_logging.append(f'`{filter_col_name}` {operator} \'{filter_value}\'')
-            if operator == '=': query = query.eq(filter_col_name, filter_value)
-            elif operator == 'ILIKE': query = query.ilike(filter_col_name, filter_value)
-            elif operator == 'LIKE': query = query.like(filter_col_name, filter_value)
-            else: continue
-            conditions_applied_count +=1
+        # --- Extract all potential conditions ---
+        extracted_conditions = []
+        for match in filter_pattern.finditer(where_clause_full):
+            # Remove quotes for easier handling in supabase-py, which adds them back if needed
+            col = match.group(1).strip().replace('"', '')
+            op = match.group(2).upper()
+            val = match.group(3).strip() # Value might be numeric/unquoted
+            extracted_conditions.append({"col": col, "op": op, "val": val})
+
+        conditions_applied_count = 0
+        applied_filter_summary = []
+
+        # --- Decide between OR and AND logic (Simplistic Check) ---
+        # Assume OR logic if " OR " is present AND " AND " is NOT present at the top level
+        # WARNING: This is a fragile heuristic and fails on mixed/nested logic
+        is_likely_or_logic = extracted_conditions and " OR " in where_clause_full.upper() and " AND " not in where_clause_full.upper()
+
+        if is_likely_or_logic:
+            print("      Attempting to apply filters using OR logic (client-side .or_())")
+            or_filter_parts = []
+            valid_or_parse = True
+            for cond in extracted_conditions:
+                col, op, val = cond["col"], cond["op"], cond["val"]
+                supabase_op = None
+                if op == 'ILIKE': supabase_op = 'ilike'
+                elif op == 'LIKE': supabase_op = 'like'
+                elif op == '=': supabase_op = 'eq'
+                elif op == '>': supabase_op = 'gt'
+                elif op == '<': supabase_op = 'lt'
+                elif op == '>=': supabase_op = 'gte'
+                elif op == '<=': supabase_op = 'lte'
+                # Add other operators as needed (e.g., 'neq', 'in', 'is')
+
+                if supabase_op:
+                    # Format for .or_(): "column.operator.value"
+                    # Ensure value doesn't contain commas that break .or_ parsing
+                    safe_val = str(val).replace(',', '%2C') # URL encode comma just in case
+                    or_filter_parts.append(f'{col}.{supabase_op}.{safe_val}')
+                    applied_filter_summary.append(f'`{col}` {op} \'{val}\'')
+                    conditions_applied_count += 1
+                else:
+                    print(f"      WARNING: Unsupported operator '{op}' encountered in OR clause for column '{col}'. Cannot reliably use .or_().")
+                    valid_or_parse = False
+                    break # Stop trying to build the OR string
+
+            if valid_or_parse and or_filter_parts:
+                or_string = ",".join(or_filter_parts)
+                print(f"      Applying .or_() filter: {or_string}")
+                query = query.or_(or_string)
+            else:
+                 print("      WARNING: Could not reliably parse conditions for .or_(). Falling back to NO filtering for this clause.")
+                 # Reset counts as we didn't apply the filter
+                 conditions_applied_count = 0
+                 applied_filter_summary = []
+                 # We can't fall back to AND here as the SQL intended OR. Doing nothing is safer than wrong results.
+
+        elif extracted_conditions:
+            # --- Apply filters sequentially (Implicit AND logic) ---
+            print("      Applying filters using sequential (implicit AND) logic.")
+            for cond in extracted_conditions:
+                col, op, val = cond["col"], cond["op"], cond["val"]
+                applied_this_filter = False
+                try:
+                    if op == 'ILIKE': query = query.ilike(col, val); applied_this_filter = True
+                    elif op == 'LIKE': query = query.like(col, val); applied_this_filter = True
+                    elif op == '=': query = query.eq(col, val); applied_this_filter = True
+                    elif op == '>': query = query.gt(col, val); applied_this_filter = True
+                    elif op == '<': query = query.lt(col, val); applied_this_filter = True
+                    elif op == '>=': query = query.gte(col, val); applied_this_filter = True
+                    elif op == '<=': query = query.lte(col, val); applied_this_filter = True
+                    # Add other operators as needed
+                    else:
+                        print(f"      WARNING: Unsupported operator '{op}' for column '{col}' in AND logic.")
+
+                    if applied_this_filter:
+                        applied_filter_summary.append(f'`{col}` {op} \'{val}\'')
+                        conditions_applied_count += 1
+                except Exception as filter_err:
+                     print(f"      ERROR applying filter: `{col}` {op} '{val}'. Error: {filter_err}")
+
 
         if conditions_applied_count > 0:
-            debug_prints.append(f"      Applied {conditions_applied_count} filter condition(s) based on: " + ", ".join(processed_conditions_for_logging))
-        elif where_clause_full:
-            debug_prints.append("      WARNING: Could not translate complex WHERE clause with placeholder. Filters may not be fully applied.")
-        else:
-            debug_prints.append("      No WHERE clause detected or parsed.")
+            print(f"      Applied {conditions_applied_count} filter condition(s): " + ", ".join(applied_filter_summary))
+        elif where_clause_full and not extracted_conditions:
+            print("      WARNING: WHERE clause found but no conditions could be parsed by the filter pattern.")
+        elif not where_clause_full:
+            print("      No WHERE clause detected.")
+        # --- End WHERE Clause Parsing ---
 
-        final_limit_to_apply = 10
+        # --- LIMIT Clause Parsing ---
+        final_limit_to_apply = 10 # Default
         limit_match = re.search(r'LIMIT\s*(\d+)', generated_sql, re.I | re.S)
         if limit_match:
             final_limit_to_apply = int(limit_match.group(1))
-            debug_prints.append(f"      Limit parsed from SQL: {final_limit_to_apply}")
+            print(f"      Limit parsed from SQL: {final_limit_to_apply}")
         else:
-            debug_prints.append(f"      No LIMIT clause found in SQL by regex, using default: {final_limit_to_apply}")
+            print(f"      No LIMIT clause found in SQL, using default: {final_limit_to_apply}")
 
         query = query.limit(final_limit_to_apply)
-        debug_prints.append(f"      Executing Placeholder Query (approximated): SELECT {select_clause} FROM {ATTRIBUTE_TABLE_NAME} ... [LIMIT {final_limit_to_apply}]")
+        # --- End LIMIT Clause Logic ---
+
+        print(f"      Executing Client-Side Query (approximated): SELECT {select_clause} FROM {ATTRIBUTE_TABLE_NAME} ... [LIMIT {final_limit_to_apply}]")
         response = query.execute()
 
         if response.data:
-            debug_prints.append(f"      SQL query returned {len(response.data)} row(s).")
-            # debug_prints.append("      Retrieved Data (first 3 rows):")
-            # for i, row_data in enumerate(response.data[:3]):
-            #      debug_prints.append(f"        Row {i+1}: {json.dumps(row_data, indent=2)}")
-            # if len(response.data) > 3: debug_prints.append(f"        ... and {len(response.data)-3} more rows.")
+            print(f"      Client query returned {len(response.data)} row(s).")
+            print("      Retrieved Data (first 3 rows):")
+            for i, row_data in enumerate(response.data[:3]):
+                 print(f"        Row {i+1}: {json.dumps(row_data, indent=2)}")
+            if len(response.data) > 3: print(f"        ... and {len(response.data)-3} more rows.")
             return response.data
         else:
-            debug_prints.append("      SQL query returned no matching rows.")
+            print("      Client query returned no matching rows.")
             return []
     except Exception as e:
-        debug_prints.append(f"    Error executing placeholder SQL query on '{ATTRIBUTE_TABLE_NAME}': {e}")
+        print(f"    Error executing client-side Supabase query on '{ATTRIBUTE_TABLE_NAME}': {e}")
+        import traceback # Keep for debugging complex issues
+        traceback.print_exc()
         return []
 
+
+# --- format_context (No changes needed) ---
 def format_context(markdown_chunks, attribute_rows):
     context_str = ""
     md_present = bool(markdown_chunks)
@@ -274,78 +354,81 @@ def format_context(markdown_chunks, attribute_rows):
         context_str += "Context from Leoni Attributes Table:\n\n"
         for i, row in enumerate(attribute_rows):
             context_str += f"--- Attribute Row {i+1} ---\n"
+            # Ensure complex keys (like those with spaces or special chars) are handled if they come from DB
             row_str_parts = []
             for key, value in row.items():
                 if value is not None:
-                    row_str_parts.append(f"  {key}: {value}")
+                    # Simple formatting for display
+                    row_str_parts.append(f"  {key}: {json.dumps(value)}") # Use json.dumps for cleaner output of various types
             context_str += "\n".join(row_str_parts)
             context_str += "\n---\n\n"
     if not md_present and not attr_present:
         return "No relevant information found in the knowledge base (documents or attributes)."
     return context_str.strip()
 
-def get_groq_chat_response(prompt, context_provided=True, groq_cli=None, debug_prints=None):
-    if not groq_cli: return "Error: Groq client not available."
+# --- get_groq_chat_response (No changes needed) ---
+def get_groq_chat_response(prompt, context_provided=True):
     if context_provided:
-        system_message = "You are a helpful assistant knowledgeable about LEOparts standards and attributes. Answer the user's question based *only* on the provided context from the Standards Document and/or the Attributes Table. The Attributes Table context shows rows retrieved based on the user's query; assume these rows accurately reflect the query's conditions. Synthesize information from both sources if relevant and available. Be concise. If listing items, like part numbers, list them clearly."
+        system_message = "You are a helpful assistant knowledgeable about LEOparts standards and attributes. Answer the user's question based *only* on the provided context from the Standards Document and/or the Attributes Table. The Attributes Table context shows rows retrieved based on the user's query; assume these rows accurately reflect the query's conditions as interpreted by the client-side filters. Synthesize information from both sources if relevant and available. Be concise. If listing items, like part numbers, list them clearly."
     else:
         system_message = "You are a helpful assistant knowledgeable about LEOparts standards and attributes. You were unable to find relevant information in the knowledge base (documents or attributes) to answer the user's question. State clearly that the information is not available in the provided materials. Do not make up information or answer from general knowledge."
     try:
-        response = groq_cli.chat.completions.create(
+        response = groq_client.chat.completions.create(
             messages=[{"role": "system", "content": system_message}, {"role": "user", "content": prompt}],
             model=GROQ_MODEL_FOR_ANSWER, temperature=0.1, stream=False )
         return response.choices[0].message.content
-    except Exception as e:
-        if debug_prints: debug_prints.append(f"    Error calling Groq API: {e}")
-        return "Error contacting LLM."
+    except Exception as e: print(f"    Error calling Groq API: {e}"); return "Error contacting LLM."
 
-# --- Main Chatbot Logic Function ---
+
+# --- Main Chat Loop ---
+print("\n--- LEOparts Standards & Attributes Chatbot (Text-to-SQL Enabled) ---")
+
+# NOTE: Providing the schema helps the LLM generate correct SQL, especially with quoting
 leoni_attributes_schema_for_main_loop = """(id: bigint, Number: text, Name: text, "Object Type Indicator": text, Context: text, Version: text, State: text, "Last Modified": timestamp with time zone, "Created On": timestamp with time zone, "Sourcing Status": text, "Material Filling": text, "Material Name": text, "Max. Working Temperature [°C]": numeric, "Min. Working Temperature [°C]": numeric, Colour: text, "Contact Systems": text, Gender: text, "Housing Seal": text, "HV Qualified": text, "Length [mm]": numeric, "Mechanical Coding": text, "Number Of Cavities": numeric, "Number Of Rows": numeric, "Pre-assembled": text, Sealing: text, "Sealing Class": text, "Terminal Position Assurance": text, "Type Of Connector": text, "Width [mm]": numeric, "Wire Seal": text, "Connector Position Assurance": text, "Colour Coding": text, "Set/Kit": text, "Name Of Closed Cavities": text, "Pull-To-Seat": text, "Height [mm]": numeric, Classification: text)"""
 
-def process_user_query(user_query):
-    """
-    Processes the user query and returns the bot's response and debug information.
-    """
-    debug_log = [] # To store intermediate processing messages
+while True:
+    user_query = input("\nYour Question: ")
+    if user_query.lower() == 'quit': break
+    if not user_query.strip(): continue
 
     relevant_markdown_chunks = []
     relevant_attribute_rows = []
     context_was_found = False
-    generated_sql_for_debug = "N/A"
+    generated_sql = None
 
     # 1. Attempt Text-to-SQL generation
-    generated_sql = generate_sql_from_query(user_query, leoni_attributes_schema_for_main_loop, groq_client, debug_log)
-    if generated_sql:
-        generated_sql_for_debug = generated_sql
+    generated_sql = generate_sql_from_query(user_query, leoni_attributes_schema_for_main_loop)
 
-    # 2. Execute SQL
+    # 2. Execute SQL (using client-side filters)
     if generated_sql:
-        relevant_attribute_rows = find_relevant_attributes_with_sql(generated_sql, supabase, debug_log)
+        relevant_attribute_rows = find_relevant_attributes_with_sql(generated_sql)
         if relevant_attribute_rows: context_was_found = True
     else:
-        debug_log.append(" -> Text-to-SQL generation failed or not applicable.")
+        print(" -> Text-to-SQL generation failed or not applicable.")
 
-    # 3. Perform Vector Search
-    run_vector_search = True
+    # 3. Perform Vector Search (can be conditional)
+    run_vector_search = True # Default: always run it for descriptive context
+    # Example: Potentially skip if SQL found *exactly* one specific item and the query was precise
+    # if generated_sql and len(relevant_attribute_rows) == 1 and "what is part number" in user_query.lower():
+       # run_vector_search = False
+
     if run_vector_search:
-        debug_log.append(" -> Generating query embedding for descriptive search...")
+        print(" -> Generating query embedding for descriptive search...")
         query_embedding = get_query_embedding(user_query)
         if query_embedding:
-            debug_log.append(f" -> Searching '{MARKDOWN_TABLE_NAME}' (Vector Search)...")
-            relevant_markdown_chunks = find_relevant_markdown_chunks(query_embedding, supabase)
+            print(f" -> Searching '{MARKDOWN_TABLE_NAME}' (Vector Search)...")
+            relevant_markdown_chunks = find_relevant_markdown_chunks(query_embedding)
             if relevant_markdown_chunks: context_was_found = True
         else:
-            debug_log.append("Error: Could not generate embedding. Skipping vector search.")
+            print("Error: Could not generate embedding. Skipping vector search.")
 
     # 4. Prepare Context
     context_str = format_context(relevant_markdown_chunks, relevant_attribute_rows)
-    if not context_was_found:
-        debug_log.append(" -> No relevant information found from either source.")
-    else:
-        debug_log.append(f" -> Found {len(relevant_markdown_chunks)} doc chunk(s) and {len(relevant_attribute_rows)} attribute row(s).")
+    if not context_was_found: print(" -> No relevant information found from either source.")
+    else: print(f" -> Found {len(relevant_markdown_chunks)} doc chunk(s) and {len(relevant_attribute_rows)} attribute row(s).")
 
     # 5. Generate Response
-    debug_log.append(" -> Generating response with Groq...")
+    print(" -> Generating response with Groq...")
     prompt_for_llm = f"""Context:
 {context_str}
 
@@ -353,85 +436,6 @@ User Question: {user_query}
 
 Answer the user question based *only* on the provided context."""
 
-    llm_response = get_groq_chat_response(prompt_for_llm, context_provided=context_was_found, groq_cli=groq_client, debug_prints=debug_log)
-
-    # Prepare debug information for display
-    debug_info_str = f"Generated SQL: {generated_sql_for_debug}\n"
-    debug_info_str += f"Markdown Chunks Found: {len(relevant_markdown_chunks)}\n"
-    debug_info_str += f"Attribute Rows Found: {len(relevant_attribute_rows)}\n\n"
-    debug_info_str += "Processing Log:\n" + "\n".join(debug_log)
-
-    return llm_response, debug_info_str
-
-# --- Streamlit UI ---
-st.title("Leoni_chat") # Header as requested
-
-# Initialize chat history
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "debug_info" not in st.session_state:
-    st.session_state.debug_info = []
-
-
-# Display chat messages from history on app rerun
-for i, message in enumerate(st.session_state.messages):
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-        # Display debug info associated with this assistant message
-        if message["role"] == "assistant" and i < len(st.session_state.debug_info) and st.session_state.debug_info[i]:
-            with st.expander("Show Processing Details"):
-                st.text(st.session_state.debug_info[i])
-
-
-# Accept user input
-if prompt := st.chat_input("Your Question:"):
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    # Display user message in chat message container
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    # Get assistant response
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
-        with st.spinner("Thinking..."):
-            assistant_response, debug_details = process_user_query(prompt)
-            full_response = assistant_response
-        message_placeholder.markdown(full_response)
-        with st.expander("Show Processing Details"): # Show details for the current response
-            st.text(debug_details)
-
-    # Add assistant response to chat history
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
-    st.session_state.debug_info.append(debug_details) # Store debug info
-
-    # Store debug info for historical messages (needs to align with messages)
-    # Pad debug_info if user messages don't have one
-    if len(st.session_state.debug_info) < len(st.session_state.messages):
-        # The last message was user, the one before that was assistant, and its debug info is already added
-        # If we directly append user message, and then assistant message + its debug info,
-        # the lengths should align: one debug_info per assistant message.
-        # Let's adjust how debug_info is stored to be a list parallel to messages,
-        # but only populated for assistant.
-        # For simplicity, if the last message was assistant, its debug info is the last one added.
-
-        # Re-aligning debug_info: create a list that has debug info for assistant messages, None otherwise
-        aligned_debug_info = []
-        debug_idx = 0
-        for msg in st.session_state.messages:
-            if msg["role"] == "assistant":
-                if debug_idx < len(st.session_state.debug_info):
-                    aligned_debug_info.append(st.session_state.debug_info[debug_idx])
-                    debug_idx += 1
-                else: # Should not happen if logic is correct, but as a fallback
-                    aligned_debug_info.append(None)
-            else:
-                aligned_debug_info.append(None)
-        st.session_state.debug_info = aligned_debug_info # Overwrite with aligned list
-
-# A small footer or instruction
-st.sidebar.markdown("---")
-st.sidebar.markdown("Ask questions about LEOparts standards and attributes.")
-st.sidebar.markdown(f"Using Groq SQL Model: `{GROQ_MODEL_FOR_SQL}`")
-st.sidebar.markdown(f"Using Groq Answer Model: `{GROQ_MODEL_FOR_ANSWER}`")
+    llm_response = get_groq_chat_response(prompt_for_llm, context_provided=context_was_found)
+    print("\nAssistant Response:")
+    print(llm_response)
