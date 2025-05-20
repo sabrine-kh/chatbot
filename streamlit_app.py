@@ -5,16 +5,26 @@ import sys
 from io import StringIO
 import contextlib
 
-# Load environment variables
+# Load environment variables from .env file for local development
 load_dotenv()
 
 # --- Configuration ---
-SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY')
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+# Try to get credentials from Streamlit secrets first, then fall back to environment variables
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.getenv('SUPABASE_URL'))
+SUPABASE_SERVICE_KEY = st.secrets.get("SUPABASE_SERVICE_KEY", os.getenv('SUPABASE_SERVICE_KEY'))
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", os.getenv('GROQ_API_KEY'))
 
 if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GROQ_API_KEY]):
-    st.error("Missing required environment variables. Please check your .env file.")
+    st.error("""
+    Missing required credentials. Please ensure they are set in either:
+    1. Streamlit Cloud Secrets (recommended for deployment)
+    2. .env file (for local development)
+    
+    Required credentials:
+    - SUPABASE_URL
+    - SUPABASE_SERVICE_KEY
+    - GROQ_API_KEY
+    """)
     st.stop()
 
 # Set environment variables for the main script
