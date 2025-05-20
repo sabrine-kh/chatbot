@@ -8,7 +8,6 @@ import time
 import json
 import unicodedata
 import re
-from google.colab import userdata
 from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
 from groq import Groq
@@ -18,15 +17,12 @@ from groq import Groq
 # from nltk.tokenize import word_tokenize
 
 # --- Configuration ---
-try:
-    SUPABASE_URL         = userdata.get('SUPABASE_URL')
-    SUPABASE_SERVICE_KEY = userdata.get('SUPABASE_SERVICE_KEY')
-    GROQ_API_KEY         = userdata.get('GROQ_API_KEY')
-    if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GROQ_API_KEY]):
-        raise ValueError("One or more secrets not found.")
-    print("Credentials loaded from Colab secrets.")
-except Exception as e:
-    print(f"Error loading secrets: {e}")
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+
+if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GROQ_API_KEY]):
+    print("Error: Missing required environment variables. Please check your .env file.")
     exit()
 
 # --- Model & DB Config ---
