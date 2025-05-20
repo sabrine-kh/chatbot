@@ -45,7 +45,7 @@ if not SUPABASE_URL.startswith('https://') or '.supabase.co' not in SUPABASE_URL
 
 # --- Model & DB Config ---
 MARKDOWN_TABLE_NAME = "markdown_chunks"
-ATTRIBUTE_TABLE_NAME = "Leoni_attributes"
+ATTRIBUTE_TABLE_NAME = "leoni_attributes"
 RPC_FUNCTION_NAME = "match_markdown_chunks"
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIMENSIONS = 384
@@ -62,8 +62,34 @@ VECTOR_MATCH_COUNT = 3
 try:
     # Initialize Supabase client
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    # Test the connection
-    supabase.table(ATTRIBUTE_TABLE_NAME).select("id").limit(1).execute()
+    
+    # Test the connection and get table info
+    try:
+        # First, let's check what tables exist
+        response = supabase.table(ATTRIBUTE_TABLE_NAME).select("*").limit(1).execute()
+        st.success("Successfully connected to Supabase!")
+        
+        # If we get here, the table exists. Let's check its structure
+        if response.data:
+            st.write("Table structure:", list(response.data[0].keys()))
+        else:
+            st.warning("Table exists but is empty")
+            
+    except Exception as e:
+        st.error(f"""
+        Database connection error: {str(e)}
+        
+        Please check:
+        1. The table name '{ATTRIBUTE_TABLE_NAME}' exists in your Supabase database
+        2. The table has the correct structure with columns:
+           - id
+           - attribute_name
+           - attribute_value
+           - description
+           - category
+        """)
+        st.stop()
+        
 except Exception as e:
     st.error(f"""
     Error connecting to Supabase: {str(e)}
