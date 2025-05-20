@@ -1,10 +1,6 @@
 import streamlit as st
-import os
-from dotenv import load_dotenv
-import sys
-from io import StringIO
-import contextlib
 import ast
+import os
 import time
 import json
 import unicodedata
@@ -13,78 +9,36 @@ from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
 from groq import Groq
 
-# Load environment variables from .env file for local development
-load_dotenv()
-
-def validate_supabase_url(url):
-    """Validate Supabase URL format."""
-    if not url:
-        return False
-    return url.startswith('https://') and '.supabase.co' in url
-
-def validate_supabase_key(key):
-    """Validate Supabase key format."""
-    if not key:
-        return False
-    return key.startswith('eyJ')  # JWT tokens start with 'eyJ'
-
 # --- Configuration ---
-# Try to get credentials from Streamlit secrets first, then fall back to environment variables
-SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.getenv('SUPABASE_URL'))
-SUPABASE_SERVICE_KEY = st.secrets.get("SUPABASE_SERVICE_KEY", os.getenv('SUPABASE_SERVICE_KEY'))
-GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", os.getenv('GROQ_API_KEY'))
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_SERVICE_KEY = st.secrets["SUPABASE_SERVICE_KEY"]
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-# Validate credentials
-if not validate_supabase_url(SUPABASE_URL):
-    st.error("""
-    Invalid Supabase URL. Please ensure it is set correctly in either:
-    1. Streamlit Cloud Secrets (recommended for deployment)
-    2. .env file (for local development)
-    
-    The URL should look like: https://<project-id>.supabase.co
-    """)
-    st.stop()
-
-if not validate_supabase_key(SUPABASE_SERVICE_KEY):
-    st.error("""
-    Invalid Supabase service key. Please ensure it is set correctly in either:
-    1. Streamlit Cloud Secrets (recommended for deployment)
-    2. .env file (for local development)
-    
-    The key should start with 'eyJ' and be a valid JWT token.
-    """)
-    st.stop()
-
-if not GROQ_API_KEY:
-    st.error("""
-    Missing Groq API key. Please ensure it is set correctly in either:
-    1. Streamlit Cloud Secrets (recommended for deployment)
-    2. .env file (for local development)
-    """)
-    st.stop()
-
-try:
-    # Initialize clients
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    groq_client = Groq(api_key=GROQ_API_KEY)
-    embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-except Exception as e:
-    st.error(f"""
-    Error initializing clients: {str(e)}
-    
-    Please check your credentials:
-    1. Supabase URL: {SUPABASE_URL[:20]}... (truncated for security)
-    2. Supabase Key: {SUPABASE_SERVICE_KEY[:10]}... (truncated for security)
-    3. Groq API Key: {GROQ_API_KEY[:10]}... (truncated for security)
-    """)
-    st.stop()
-
-# Constants
+# --- Model & DB Config ---
+MARKDOWN_TABLE_NAME = "markdown_chunks"
+ATTRIBUTE_TABLE_NAME = "Leoni_attributes"
 RPC_FUNCTION_NAME = "match_markdown_chunks"
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_DIMENSIONS = 384
+
+# Model Configuration
+GROQ_MODEL_FOR_SQL = "qwen-qwq-32b"
+GROQ_MODEL_FOR_ANSWER = "qwen-qwq-32b"
+
+# --- Search Parameters ---
 VECTOR_SIMILARITY_THRESHOLD = 0.4
 VECTOR_MATCH_COUNT = 3
 
-# Schema for the database
+# --- Initialize Clients ---
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    st_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    groq_client = Groq(api_key=GROQ_API_KEY)
+except Exception as e:
+    st.error(f"Error initializing clients: {str(e)}")
+    st.stop()
+
+# Constants
 leoni_attributes_schema_for_main_loop = """
 CREATE TABLE leoni_attributes (
     id SERIAL PRIMARY KEY,
@@ -106,7 +60,7 @@ def _normalise_chunk(chunk):
 def get_query_embedding(query):
     """Generate embedding for the query using the sentence transformer model."""
     try:
-        query_embedding = embedding_model.encode(query)
+        query_embedding = st_model.encode(query)
         return query_embedding.tolist()
     except Exception as e:
         st.error(f"Error generating query embedding: {str(e)}")
