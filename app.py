@@ -15,81 +15,66 @@ from groq import Groq
 # from nltk.tokenize import word_tokenize
 
 # --- Streamlit UI ---
-st.set_page_config(page_title="Leoni_chat", layout="wide")
+st.set_page_config(
+    page_title="Leoni_chat",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Show loading spinner while initializing
-with st.spinner("Initializing the chatbot... This may take a few moments."):
-    # --- Configuration ---
+# Initialize session state
+if 'initialized' not in st.session_state:
+    st.session_state.initialized = False
+
+# Sidebar for status
+with st.sidebar:
+    st.title("Status")
+    status_placeholder = st.empty()
+
+def initialize_app():
+    """Initialize all required components with proper error handling"""
     try:
+        # Load secrets
         SUPABASE_URL = st.secrets["SUPABASE_URL"]
         SUPABASE_SERVICE_KEY = st.secrets["SUPABASE_SERVICE_KEY"]
         GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+        
         if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GROQ_API_KEY]):
             raise ValueError("One or more secrets not found in st.secrets.")
-        st.success("Credentials loaded successfully!")
+        
+        # Initialize clients
+        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        st_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        groq_client = Groq(api_key=GROQ_API_KEY)
+        
+        # Store in session state
+        st.session_state.supabase = supabase
+        st.session_state.st_model = st_model
+        st.session_state.groq_client = groq_client
+        st.session_state.initialized = True
+        
+        return True
     except Exception as e:
-        st.error(f"Error loading secrets: {e}. Please ensure .streamlit/secrets.toml is configured.")
-        st.stop()
+        st.error(f"Initialization error: {str(e)}")
+        return False
 
-    # --- Model & DB Config ---
-    MARKDOWN_TABLE_NAME    = "markdown_chunks"
-    ATTRIBUTE_TABLE_NAME   = "Leoni_attributes"          # <<< VERIFY
-    RPC_FUNCTION_NAME      = "match_markdown_chunks"     # <<< VERIFY
-    EMBEDDING_MODEL_NAME   = "sentence-transformers/all-MiniLM-L6-v2"
-    EMBEDDING_DIMENSIONS   = 384
+# Main app layout
+st.title("Leoni_chat")
 
-    # ░░░  MODEL SWITCH  ░░░
-    GROQ_MODEL_FOR_SQL     = "qwen-qwq-32b"              ### <-- CHANGED
-    GROQ_MODEL_FOR_ANSWER  = "qwen-qwq-32b"              ### <-- CHANGED
-    print(f"Using Groq Model for SQL: {GROQ_MODEL_FOR_SQL}")
-    print(f"Using Groq Model for Answer: {GROQ_MODEL_FOR_ANSWER}")
+# Initialize if not already done
+if not st.session_state.initialized:
+    with st.spinner("Initializing the chatbot... This may take a few moments."):
+        if initialize_app():
+            st.success("Chatbot initialized successfully!")
+        else:
+            st.error("Failed to initialize the chatbot. Please check the error message above.")
+            st.stop()
 
-    # --- Search Parameters ---
-    VECTOR_SIMILARITY_THRESHOLD = 0.4
-    VECTOR_MATCH_COUNT          = 3
-
-    # Initialize clients with caching
-    @st.cache_resource
-    def init_supabase_client():
-        try:
-            client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-            st.success("Supabase client initialized.")
-            return client
-        except Exception as e:
-            st.error(f"Error initializing Supabase client: {e}")
-            return None
-
-    @st.cache_resource
-    def load_sentence_transformer_model():
-        try:
-            model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-            st.success(f"Sentence Transformer model loaded.")
-            test_emb = model.encode("test")
-            if len(test_emb) != EMBEDDING_DIMENSIONS:
-                raise ValueError("Embedding dimension mismatch")
-            return model
-        except Exception as e:
-            st.error(f"Error loading Sentence Transformer model: {e}")
-            return None
-
-    @st.cache_resource
-    def init_groq_client():
-        try:
-            client = Groq(api_key=GROQ_API_KEY)
-            st.success("Groq client initialized.")
-            return client
-        except Exception as e:
-            st.error(f"Error initializing Groq client: {e}")
-            return None
-
-    # Initialize all clients
-    supabase = init_supabase_client()
-    st_model = load_sentence_transformer_model()
-    groq_client = init_groq_client()
-
-    if not all([supabase, st_model, groq_client]):
-        st.error("One or more critical services could not be initialized. The chatbot cannot function.")
-        st.stop()
+# Update status in sidebar
+with st.sidebar:
+    if st.session_state.initialized:
+        status_placeholder.success("✅ All systems operational")
+    else:
+        status_placeholder.error("❌ Initialization failed")
 
 # ───────────────────────────────────────────────────────────────────────────
 # HELPER TO STRIP <think> … </think> FROM GROQ RESPONSES
@@ -467,3 +452,4 @@ Answer the user question based *only* on the provided context."""
     llm_response = get_groq_chat_response(prompt_for_llm, context_provided=context_was_found)
     print("\nAssistant Response:")
     print(llm_response)
+    
