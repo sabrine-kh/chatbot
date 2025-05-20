@@ -9,11 +9,18 @@ from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
 from groq import Groq
 
+# Debug: Print all available secrets (safely)
+st.write("Available secrets:", list(st.secrets.keys()))
+
 # --- Configuration ---
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_SERVICE_KEY = st.secrets["SUPABASE_SERVICE_KEY"]
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+    
+    # Debug: Print the URL (safely)
+    st.write("Supabase URL format check:", SUPABASE_URL.startswith('https://') and '.supabase.co' in SUPABASE_URL)
+    
 except KeyError as e:
     st.error(f"""
     Missing required secret: {str(e)}
