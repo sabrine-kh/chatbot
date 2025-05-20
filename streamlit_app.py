@@ -16,29 +16,68 @@ import groq
 # Load environment variables from .env file for local development
 load_dotenv()
 
+def validate_supabase_url(url):
+    """Validate Supabase URL format."""
+    if not url:
+        return False
+    return url.startswith('https://') and '.supabase.co' in url
+
+def validate_supabase_key(key):
+    """Validate Supabase key format."""
+    if not key:
+        return False
+    return key.startswith('eyJ')  # JWT tokens start with 'eyJ'
+
 # --- Configuration ---
 # Try to get credentials from Streamlit secrets first, then fall back to environment variables
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.getenv('SUPABASE_URL'))
 SUPABASE_SERVICE_KEY = st.secrets.get("SUPABASE_SERVICE_KEY", os.getenv('SUPABASE_SERVICE_KEY'))
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", os.getenv('GROQ_API_KEY'))
 
-if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GROQ_API_KEY]):
+# Validate credentials
+if not validate_supabase_url(SUPABASE_URL):
     st.error("""
-    Missing required credentials. Please ensure they are set in either:
+    Invalid Supabase URL. Please ensure it is set correctly in either:
     1. Streamlit Cloud Secrets (recommended for deployment)
     2. .env file (for local development)
     
-    Required credentials:
-    - SUPABASE_URL
-    - SUPABASE_SERVICE_KEY
-    - GROQ_API_KEY
+    The URL should look like: https://<project-id>.supabase.co
     """)
     st.stop()
 
-# Initialize clients
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-groq_client = groq.Groq(api_key=GROQ_API_KEY)
-embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+if not validate_supabase_key(SUPABASE_SERVICE_KEY):
+    st.error("""
+    Invalid Supabase service key. Please ensure it is set correctly in either:
+    1. Streamlit Cloud Secrets (recommended for deployment)
+    2. .env file (for local development)
+    
+    The key should start with 'eyJ' and be a valid JWT token.
+    """)
+    st.stop()
+
+if not GROQ_API_KEY:
+    st.error("""
+    Missing Groq API key. Please ensure it is set correctly in either:
+    1. Streamlit Cloud Secrets (recommended for deployment)
+    2. .env file (for local development)
+    """)
+    st.stop()
+
+try:
+    # Initialize clients
+    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    groq_client = groq.Groq(api_key=GROQ_API_KEY)
+    embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+except Exception as e:
+    st.error(f"""
+    Error initializing clients: {str(e)}
+    
+    Please check your credentials:
+    1. Supabase URL: {SUPABASE_URL[:20]}... (truncated for security)
+    2. Supabase Key: {SUPABASE_SERVICE_KEY[:10]}... (truncated for security)
+    3. Groq API Key: {GROQ_API_KEY[:10]}... (truncated for security)
+    """)
+    st.stop()
 
 # Constants
 RPC_FUNCTION_NAME = "match_markdown_chunks"
