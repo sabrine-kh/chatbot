@@ -219,15 +219,37 @@ def _to_dict(row):
         'category': row['category']
     }
 
-def find_relevant_attributes_with_sql(sql_query):
-    """Execute SQL query and return relevant attributes."""
-    try:
-        response = supabase.table('leoni_attributes').select('*').execute()
-        if response.data:
-            return [_to_dict(row) for row in response.data]
+def find_relevant_attributes_with_sql(generated_sql: str):
+    """
+    Executes the LLM-generated SELECT via execute_readonly_sql().
+    Always returns List[dict] rows.
+    """
+    if not generated_sql:
         return []
+
+    sql_to_run = generated_sql.rstrip().rstrip(';')
+    try:
+        res = supabase.rpc("execute_readonly_sql", {"q": sql_to_run}).execute()
+
+        # ─── raw dump for troubleshooting ───
+        st.write("      ─── Raw rows from execute_readonly_sql ───")
+        for i, raw in enumerate(res.data or []):
+            st.write(f"      Row {i+1}: {raw}")
+        st.write("      ───────────────────────────────────────────")
+
+        if not res.data:
+            return []
+
+        # If each element is already a dict, just return the list as-is
+        if isinstance(res.data[0], dict):
+            return res.data
+
+        # Otherwise grab the single JSON column
+        first_key = next(iter(res.data[0].keys()))
+        return [_to_dict(row[first_key]) for row in res.data]
+
     except Exception as e:
-        st.error(f"Error executing SQL query: {str(e)}")
+        st.error(f"    Error executing SQL via RPC: {e}")
         return []
 
 def format_context(markdown_chunks, attribute_rows):
