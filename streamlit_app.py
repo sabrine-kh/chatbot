@@ -45,7 +45,7 @@ if not SUPABASE_URL.startswith('https://') or '.supabase.co' not in SUPABASE_URL
 
 # --- Model & DB Config ---
 MARKDOWN_TABLE_NAME = "markdown_chunks"
-ATTRIBUTE_TABLE_NAME = "leoni_attributes"
+ATTRIBUTE_TABLE_NAME = "Leoni_attributes"
 RPC_FUNCTION_NAME = "match_markdown_chunks"
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIMENSIONS = 384
@@ -82,11 +82,42 @@ try:
         Please check:
         1. The table name '{ATTRIBUTE_TABLE_NAME}' exists in your Supabase database
         2. The table has the correct structure with columns:
-           - id
-           - attribute_name
-           - attribute_value
-           - description
-           - category
+           - Number
+           - Name
+           - Object Type Indicator
+           - Context
+           - Version
+           - State
+           - Last Modified
+           - Created On
+           - Sourcing Status
+           - Material Filling
+           - Material Name
+           - Max. Working Temperature [°C]
+           - Min. Working Temperature [°C]
+           - Colour
+           - Contact Systems
+           - Gender
+           - Housing Seal
+           - HV Qualified
+           - Length [mm]
+           - Mechanical Coding
+           - Number Of Cavities
+           - Number Of Rows
+           - Pre-assembled
+           - Sealing
+           - Sealing Class
+           - Terminal Position Assurance
+           - Type Of Connector
+           - Width [mm]
+           - Wire Seal
+           - Connector Position Assurance
+           - Colour Coding
+           - Set/Kit
+           - Name Of Closed Cavities
+           - Pull-To-Seat
+           - Height [mm]
+           - Classification
         """)
         st.stop()
         
@@ -109,16 +140,7 @@ except Exception as e:
     st.stop()
 
 # Constants
-leoni_attributes_schema_for_main_loop = """
-CREATE TABLE leoni_attributes (
-    id SERIAL PRIMARY KEY,
-    attribute_name VARCHAR(255),
-    attribute_value TEXT,
-    description TEXT,
-    category VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-"""
+leoni_attributes_schema_for_main_loop = """(id: bigint, Number: text, Name: text, "Object Type Indicator": text, Context: text, Version: text, State: text, "Last Modified": timestamp with time zone, "Created On": timestamp with time zone, "Sourcing Status": text, "Material Filling": text, "Material Name": text, "Max. Working Temperature [°C]": numeric, "Min. Working Temperature [°C]": numeric, Colour: text, "Contact Systems": text, Gender: text, "Housing Seal": text, "HV Qualified": text, "Length [mm]": numeric, "Mechanical Coding": text, "Number Of Cavities": numeric, "Number Of Rows": numeric, "Pre-assembled": text, Sealing: text, "Sealing Class": text, "Terminal Position Assurance": text, "Type Of Connector": text, "Width [mm]": numeric, "Wire Seal": text, "Connector Position Assurance": text, "Colour Coding": text, "Set/Kit": text, "Name Of Closed Cavities": text, "Pull-To-Seat": text, "Height [mm]": numeric, Classification: text)"""
 
 def _normalise_chunk(chunk):
     """Normalize text by removing special characters and extra whitespace."""
