@@ -9,6 +9,9 @@ from supabase import create_client
 from sentence_transformers import SentenceTransformer
 import groq
 
+# Initialize Streamlit
+st.set_page_config(page_title="LEOparts Chatbot", page_icon="⚙️")
+
 # --- Configuration ---
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.getenv('SUPABASE_URL'))
 SUPABASE_SERVICE_KEY = st.secrets.get("SUPABASE_SERVICE_KEY", os.getenv('SUPABASE_SERVICE_KEY'))
@@ -189,8 +192,6 @@ Answer the user question based *only* on the provided context."""
     return get_groq_chat_response(prompt_for_llm, context_provided=bool(context_str))
 
 # Streamlit UI
-st.set_page_config(page_title="LEOparts Chatbot", page_icon="⚙️")
-
 st.title("⚙️  LEOparts Standards & Attributes Chatbot")
 
 with st.form(key="qa_form"):
