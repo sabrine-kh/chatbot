@@ -14,12 +14,14 @@ st.write("Available secrets:", list(st.secrets.keys()))
 
 # --- Configuration ---
 try:
+    # Debug: Print the actual values (safely)
+    st.write("Supabase URL (first 10 chars):", st.secrets["SUPABASE_URL"][:10] + "..." if st.secrets["SUPABASE_URL"] else "None")
+    st.write("Supabase Key (first 10 chars):", st.secrets["SUPABASE_SERVICE_KEY"][:10] + "..." if st.secrets["SUPABASE_SERVICE_KEY"] else "None")
+    st.write("Groq Key (first 10 chars):", st.secrets["GROQ_API_KEY"][:10] + "..." if st.secrets["GROQ_API_KEY"] else "None")
+    
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_SERVICE_KEY = st.secrets["SUPABASE_SERVICE_KEY"]
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-    
-    # Debug: Print the URL (safely)
-    st.write("Supabase URL format check:", SUPABASE_URL.startswith('https://') and '.supabase.co' in SUPABASE_URL)
     
 except KeyError as e:
     st.error(f"""
