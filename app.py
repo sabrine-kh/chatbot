@@ -1,5 +1,3 @@
-# Cell 1: Install Libraries
-!pip install supabase sentence-transformers torch groq nltk --quiet # NLTK might still be useful for analyzing the query *before* sending to Text-to-SQL, but not strictly necessary for the core logic
 
 # Cell 2: Main Script (Generalized Text-to-SQL Focused)
 import ast
