@@ -9,9 +9,9 @@ import time
 import json
 import unicodedata
 import re
-from supabase import create_client
+from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
-import groq
+from groq import Groq
 
 # Load environment variables from .env file for local development
 load_dotenv()
@@ -65,8 +65,8 @@ if not GROQ_API_KEY:
 
 try:
     # Initialize clients
-    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    groq_client = groq.Groq(api_key=GROQ_API_KEY)
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    groq_client = Groq(api_key=GROQ_API_KEY)
     embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 except Exception as e:
     st.error(f"""
