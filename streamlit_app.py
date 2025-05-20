@@ -5,6 +5,8 @@ import time
 import json
 import unicodedata
 import re
+from io import StringIO
+import contextlib
 from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
 from groq import Groq
