@@ -1,4 +1,3 @@
-
 # Cell 2: Main Script (Generalized Text-to-SQL Focused)
 import ast
 import os
@@ -6,7 +5,7 @@ import time
 import json
 import unicodedata
 import re
-from google.colab import userdata
+import streamlit as st
 from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
 from groq import Groq
@@ -17,15 +16,16 @@ from groq import Groq
 
 # --- Configuration ---
 try:
-    SUPABASE_URL         = userdata.get('SUPABASE_URL')
-    SUPABASE_SERVICE_KEY = userdata.get('SUPABASE_SERVICE_KEY')
-    GROQ_API_KEY         = userdata.get('GROQ_API_KEY')
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_SERVICE_KEY = st.secrets["SUPABASE_SERVICE_KEY"]
+    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
     if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GROQ_API_KEY]):
-        raise ValueError("One or more secrets not found.")
-    print("Credentials loaded from Colab secrets.")
+        raise ValueError("One or more secrets not found in st.secrets.")
+    print("Credentials loaded from Streamlit secrets.")
 except Exception as e:
     print(f"Error loading secrets: {e}")
-    exit()
+    st.error(f"Error loading secrets: {e}. Please ensure .streamlit/secrets.toml is configured.")
+    st.stop()
 
 # --- Model & DB Config ---
 MARKDOWN_TABLE_NAME    = "markdown_chunks"
