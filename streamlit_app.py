@@ -9,6 +9,14 @@ from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
 from groq import Groq
 
+# Initialize Streamlit
+st.set_page_config(
+    page_title="LEOparts Chatbot",
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 # Debug: Print all available secrets (safely)
 st.write("Available secrets:", list(st.secrets.keys()))
 
@@ -251,14 +259,6 @@ def get_groq_chat_response(prompt, context_provided=True):
     except Exception as e:
         st.error(f"Error getting chat response: {str(e)}")
         return "I apologize, but I encountered an error while processing your request."
-
-# Initialize Streamlit
-st.set_page_config(
-    page_title="LEOparts Chatbot",
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # Add custom CSS to handle loading states
 st.markdown("""
