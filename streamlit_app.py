@@ -10,9 +10,29 @@ from sentence_transformers import SentenceTransformer
 from groq import Groq
 
 # --- Configuration ---
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_SERVICE_KEY = st.secrets["SUPABASE_SERVICE_KEY"]
-GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_SERVICE_KEY = st.secrets["SUPABASE_SERVICE_KEY"]
+    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+except KeyError as e:
+    st.error(f"""
+    Missing required secret: {str(e)}
+    
+    Please ensure all required secrets are set in Streamlit Cloud:
+    - SUPABASE_URL
+    - SUPABASE_SERVICE_KEY
+    - GROQ_API_KEY
+    """)
+    st.stop()
+
+# Validate Supabase URL format
+if not SUPABASE_URL.startswith('https://') or '.supabase.co' not in SUPABASE_URL:
+    st.error(f"""
+    Invalid Supabase URL format: {SUPABASE_URL}
+    
+    The URL should be in the format: https://<project-id>.supabase.co
+    """)
+    st.stop()
 
 # --- Model & DB Config ---
 MARKDOWN_TABLE_NAME = "markdown_chunks"
@@ -31,11 +51,26 @@ VECTOR_MATCH_COUNT = 3
 
 # --- Initialize Clients ---
 try:
+    # Initialize Supabase client
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    # Test the connection
+    supabase.table(ATTRIBUTE_TABLE_NAME).select("id").limit(1).execute()
+except Exception as e:
+    st.error(f"""
+    Error connecting to Supabase: {str(e)}
+    
+    Please check your Supabase credentials:
+    - URL: {SUPABASE_URL}
+    - Service Key: {SUPABASE_SERVICE_KEY[:10]}... (truncated)
+    """)
+    st.stop()
+
+try:
+    # Initialize other clients
     st_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
     groq_client = Groq(api_key=GROQ_API_KEY)
 except Exception as e:
-    st.error(f"Error initializing clients: {str(e)}")
+    st.error(f"Error initializing other clients: {str(e)}")
     st.stop()
 
 # Constants
