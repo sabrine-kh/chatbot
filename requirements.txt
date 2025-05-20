@@ -1,6 +1,7 @@
-streamlit
-supabase
-sentence-transformers
+streamlit>=1.32.0
+supabase>=2.3.0
+sentence-transformers>=2.5.1
 torch
-groq
+groq>=0.4.2
 # nltk # Add if you uncomment and use NLTK features
+python-dotenv>=1.0.0
