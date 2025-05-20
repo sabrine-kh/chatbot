@@ -1,7 +1,9 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
 supabase==2.3.0
 sentence-transformers==2.5.1
---find-links https://download.pytorch.org/whl/cpu
-torch==2.5.1
 groq==0.4.2
 nltk==3.8.1
 streamlit==1.32.0

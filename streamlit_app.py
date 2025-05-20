@@ -4,11 +4,6 @@ from dotenv import load_dotenv
 import sys
 from io import StringIO
 import contextlib
-import torch
-
-# Set environment variables for PyTorch
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
-torch.set_num_threads(4)  # Limit CPU threads
 
 # Load environment variables
 load_dotenv()
@@ -151,12 +146,4 @@ with st.sidebar:
     st.markdown("""
     - **Vector Similarity Threshold**: 0.4
     - **Vector Match Count**: 3
-    """)
-    
-    # Add system information
-    st.header("System Information")
-    st.markdown(f"""
-    - **PyTorch Version**: {torch.__version__}
-    - **CUDA Available**: {torch.cuda.is_available()}
-    - **Device**: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}
     """) 
