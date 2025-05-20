@@ -150,8 +150,6 @@ def find_relevant_markdown_chunks(query_embedding):
     ).execute()
 
     raw_rows = resp.data or []
-    st.write("      markdown RPC:", raw_rows[:3])   # optional debug
-
     return [_normalise_chunk(r) for r in raw_rows]
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -159,7 +157,6 @@ def find_relevant_markdown_chunks(query_embedding):
 # ───────────────────────────────────────────────────────────────────────────
 def generate_sql_from_query(user_query, table_schema):
     """Uses Groq LLM with refined prompt and examples to generate SQL, attempting broad keyword matching."""
-    st.write("    Attempting Text-to-SQL generation...")
     # --- Full Original Prompt ---
     prompt = f"""Your task is to convert natural language questions into robust PostgreSQL SELECT queries for the "Leoni_attributes" table. The primary goal is to find matching rows even if the user slightly misspells a keyword or uses variations.
 
@@ -229,7 +226,6 @@ SQL Query:
         generated_sql = strip_think_tags(response.choices[0].message.content)
 
         if generated_sql == "NO_SQL":
-            st.write("    LLM determined no SQL query is applicable.")
             return None
 
         # Check if valid SQL (starts with SELECT, ends with ;)
@@ -238,22 +234,17 @@ SQL Query:
                          "ALTER", "CREATE", "EXECUTE", "GRANT", "REVOKE"]
             pattern = re.compile(r'\b(?:' + '|'.join(forbidden) + r')\b', re.IGNORECASE)
             if pattern.search(generated_sql):
-                st.warning(f"    WARNING: Generated SQL contains forbidden keyword. Discarding: {generated_sql}")
                 return None
 
             # Check if the target table name appears after FROM
             table_name_pattern = r'FROM\s+(?:[\w]+\.)?("?' + ATTRIBUTE_TABLE_NAME + r'"?)'
             if not re.search(table_name_pattern, generated_sql, re.IGNORECASE):
-                st.warning(f"    WARNING: Generated SQL might not be querying '{ATTRIBUTE_TABLE_NAME}' correctly. Discarding: {generated_sql}")
                 return None
 
-            st.write(f"    Generated SQL: {generated_sql}")
             return generated_sql
         else:
-            st.warning(f"    LLM response was not valid SQL or NO_SQL: {generated_sql}")
             return None
     except Exception as e:
-        st.error(f"    Error during Text-to-SQL generation: {e}")
         return None
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -291,12 +282,6 @@ def find_relevant_attributes_with_sql(generated_sql: str):
     try:
         res = supabase.rpc("execute_readonly_sql", {"q": sql_to_run}).execute()
 
-        # ─── raw dump for troubleshooting ───
-        st.write("      ─── Raw rows from execute_readonly_sql ───")
-        for i, raw in enumerate(res.data or []):
-            st.write(f"      Row {i+1}: {raw}")
-        st.write("      ───────────────────────────────────────────")
-
         if not res.data:
             return []
 
@@ -309,7 +294,6 @@ def find_relevant_attributes_with_sql(generated_sql: str):
         return [_to_dict(row[first_key]) for row in res.data]
 
     except Exception as e:
-        st.error(f"    Error executing SQL via RPC: {e}")
         return []
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -413,31 +397,20 @@ if prompt := st.chat_input("What would you like to know?"):
                 relevant_attribute_rows = find_relevant_attributes_with_sql(generated_sql)
                 if relevant_attribute_rows:
                     context_was_found = True
-            else:
-                st.write(" -> Text-to-SQL generation failed or not applicable.")
 
             # 3. Perform Vector Search (can be conditional)
             run_vector_search = True
             if run_vector_search:
-                st.write(" -> Generating query embedding for descriptive search...")
                 query_embedding = get_query_embedding(prompt)
                 if query_embedding:
-                    st.write(f" -> Searching '{MARKDOWN_TABLE_NAME}' (Vector Search)...")
                     relevant_markdown_chunks = find_relevant_markdown_chunks(query_embedding)
                     if relevant_markdown_chunks:
                         context_was_found = True
-                else:
-                    st.error("Error: Could not generate embedding. Skipping vector search.")
 
             # 4. Prepare Context
             context_str = format_context(relevant_markdown_chunks, relevant_attribute_rows)
-            if not context_was_found:
-                st.write(" -> No relevant information found from either source.")
-            else:
-                st.write(f" -> Found {len(relevant_markdown_chunks)} doc chunk(s) and {len(relevant_attribute_rows)} attribute row(s).")
 
             # 5. Generate Response
-            st.write(" -> Generating response with Groq...")
             prompt_for_llm = f"""Context:
 {context_str}
 
