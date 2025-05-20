@@ -5,3 +5,4 @@ torch
 groq>=0.4.2
 # nltk # Add if you uncomment and use NLTK features
 python-dotenv>=1.0.0
+huggingface_hub[hf_xet]>=0.20.3
